@@ -11,6 +11,8 @@ from src.cleaning import load_file, detect_columns, clean_data, CANDIDATES
 from src.kpis import compute_kpis, monthly_trend, group_summary
 from src.forecasting import forecast_sales
 
+from src.diagnosis import diagnose, health_label
+
 st.set_page_config(page_title="AI Business Doctor", page_icon="🧠", layout="wide")
 st.title("🧠 AI-Powered Business Doctor")
 
@@ -55,7 +57,31 @@ for col, (name, val) in zip(cols, k.items()):
         col.metric(name, f"{val:,}")
     else:
         col.metric(name, f"${val:,.0f}")
+# Business diagnosis
+score, issues = diagnose(df)
 
+st.subheader("🩺 Business Health Check")
+left, right = st.columns([1, 2])
+
+with left:
+    gauge = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=score,
+        title={"text": health_label(score)},
+        gauge={"axis": {"range": [0, 100]}},
+    ))
+    gauge.update_layout(height=280, margin=dict(t=60, b=0, l=20, r=20))
+    st.plotly_chart(gauge, width="stretch")
+
+with right:
+    if not issues:
+        st.success("No major problems detected.")
+    for i in issues:
+        message = f"**{i['title']}**: {i['detail']}"
+        if i["severity"] == "critical":
+            st.error(message)
+        else:
+            st.warning(message)
 y_cols = [c for c in ["Sales", "Profit"] if c in df.columns]
 
 # Charts
@@ -100,5 +126,3 @@ else:
 with st.expander("View cleaned data"):
     st.dataframe(df.head(100))
     
-    with st.expander("View cleaned data"):
-        st.dataframe(df.head(100))
