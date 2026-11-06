@@ -29,7 +29,7 @@ def diagnose(df):
         profit_by = df.groupby(group_col)["Profit"].sum()
         losers = profit_by[profit_by < 0].sort_values()
         if len(losers) > 0:
-            names = ", ".join(f"{n} (${v:,.0f})" for n, v in losers.head(5).items())
+            names = ", ".join(f"{n} (\\${v:,.0f})" for n, v in losers.head(5).items())
             issues.append(_issue("critical", f"{len(losers)} loss-making {group_col}(s)",
                                  f"These lose money: {names}.", min(25, 8 * len(losers))))
 
