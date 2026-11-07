@@ -14,6 +14,7 @@ from src.forecasting import forecast_sales
 from src.diagnosis import diagnose, health_label
 from src.segmentation import segment_customers
 from src.database import save_to_db, run_query
+from src.chatbot import answer_question
 
 st.set_page_config(page_title="AI Business Doctor", page_icon="🧠", layout="wide")
 st.title("🧠 AI-Powered Business Doctor")
@@ -125,6 +126,30 @@ else:
     c1.metric("Random Forest MAPE", f"{r['MAPE']:.1f}%")
     c2.metric("Baseline MAPE", f"{b['MAPE']:.1f}%")
 # Database
+# AI chatbot
+st.subheader("💬 Ask your Business Doctor")
+st.caption("Tip: click 'Save cleaned data to database' below first.")
+
+if "chat" not in st.session_state:
+    st.session_state.chat = []
+
+for msg in st.session_state.chat:
+    with st.chat_message(msg["role"]):
+        st.write(msg["text"])
+        if msg.get("sql"):
+            with st.expander("SQL used"):
+                st.code(msg["sql"], language="sql")
+
+question = st.chat_input("e.g. Which category has the lowest profit?")
+if question:
+    st.session_state.chat.append({"role": "user", "text": question})
+    with st.spinner("Thinking..."):
+        try:
+            answer, sql, result_df = answer_question(question)
+        except Exception as e:
+            answer, sql = f"Sorry, the AI service had a problem: {e}", None
+    st.session_state.chat.append({"role": "assistant", "text": answer, "sql": sql})
+    st.rerun()
 st.subheader("🗄️ Database")
 if st.button("Save cleaned data to database"):
     n = save_to_db(df)
