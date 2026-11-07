@@ -12,6 +12,8 @@ from src.kpis import compute_kpis, monthly_trend, group_summary
 from src.forecasting import forecast_sales
 
 from src.diagnosis import diagnose, health_label
+from src.segmentation import segment_customers
+from src.database import save_to_db, run_query
 
 st.set_page_config(page_title="AI Business Doctor", page_icon="🧠", layout="wide")
 st.title("🧠 AI-Powered Business Doctor")
@@ -122,7 +124,22 @@ else:
     r, b = result["rf_scores"], result["baseline_scores"]
     c1.metric("Random Forest MAPE", f"{r['MAPE']:.1f}%")
     c2.metric("Baseline MAPE", f"{b['MAPE']:.1f}%")
+# Database
+st.subheader("🗄️ Database")
+if st.button("Save cleaned data to database"):
+    n = save_to_db(df)
+    st.success(f"Saved {n:,} rows to table 'sales'.")
+
+with st.expander("Run a SQL query"):
+    sql = st.text_area(
+        "SELECT query",
+        "SELECT Category, ROUND(SUM(Sales),0) AS total_sales FROM sales GROUP BY Category",
+    )
+    if st.button("Run query"):
+        try:
+            st.dataframe(run_query(sql))
+        except Exception as e:
+            st.error(f"Query failed: {e}")
 
 with st.expander("View cleaned data"):
     st.dataframe(df.head(100))
-    
