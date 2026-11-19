@@ -20,7 +20,7 @@ def ask_llm(prompt, retries=3):
 
     client = genai.Client(
         api_key=api_key,
-        http_options=types.HttpOptions(timeout=30000),  # 30 seconds
+        http_options=types.HttpOptions(timeout=60000),  # 30 seconds
     )
 
     for attempt in range(retries):
@@ -28,7 +28,7 @@ def ask_llm(prompt, retries=3):
             response = client.models.generate_content(model=MODEL, contents=prompt)
             return response.text
         except errors.APIError as e:
-            busy = getattr(e, "code", None) in (429, 503)
+            busy = getattr(e, "code", None) in (429, 503, 504)
             if busy and attempt < retries - 1:
                 time.sleep(2 * (attempt + 1))
                 continue

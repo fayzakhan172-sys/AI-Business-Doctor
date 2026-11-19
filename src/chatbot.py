@@ -24,7 +24,7 @@ def _is_safe(sql):
     low = sql.lower()
     if not low.startswith("select"):
         return False
-    if ";" in sql:  # no multiple statements
+    if ";" in sql:
         return False
     return not any(re.search(rf"\b{w}\b", low) for w in BLOCKED)
 
@@ -34,6 +34,8 @@ def answer_question(question):
     sql_prompt = f"""You are a SQLite expert. Write ONE SQL SELECT query that answers the question.
 {SCHEMA}
 Rules: return only the SQL, no explanation, no markdown. Use only the columns above.
+Always include the relevant numeric value (for example SUM(Profit)) in the SELECT, not just names.
+Round money to 2 decimals using ROUND(..., 2).
 Limit results to 20 rows unless the question needs more.
 
 Question: {question}"""
@@ -57,6 +59,6 @@ SQL result (this is the real data):
 {df.head(20).to_string(index=False)}
 
 Answer the question in 2-4 simple sentences using ONLY the numbers above.
-Do not invent any numbers. Use $ for money."""
+Mention the actual numbers. Do not invent any numbers. Use $ for money."""
 
     return ask_llm(answer_prompt), sql, df
