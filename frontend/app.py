@@ -15,6 +15,7 @@ from src.segmentation import segment_customers
 from src.database import save_to_db, run_query
 from src.chatbot import answer_question
 from src.recommender import build_summary, get_recommendations
+from src.report import build_pdf
 
 st.set_page_config(page_title="AI Business Doctor", page_icon="🧠", layout="wide")
 st.title("🧠 AI-Powered Business Doctor")
@@ -163,6 +164,15 @@ if st.button("Generate recommendations"):
             st.error(f"AI service problem: {e}")
 
 # ---------------- Database ----------------
+# ---------------- PDF report ----------------
+st.subheader("📄 Download Report")
+pdf_bytes = build_pdf(
+    k, score, health_label(score), issues,
+    seg_result[1] if seg_result else None,
+    st.session_state.get("recs"),
+)
+st.download_button("Download PDF report", pdf_bytes, file_name="business_report.pdf", mime="application/pdf")
+st.caption("Tip: click 'Generate recommendations' first to include them in the report.")
 st.subheader("🗄️ Database")
 if st.button("Save cleaned data to database"):
     n = save_to_db(df)
