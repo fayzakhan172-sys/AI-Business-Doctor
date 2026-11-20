@@ -10,11 +10,11 @@ import plotly.graph_objects as go
 from src.cleaning import load_file, detect_columns, clean_data, CANDIDATES
 from src.kpis import compute_kpis, monthly_trend, group_summary
 from src.forecasting import forecast_sales
-
 from src.diagnosis import diagnose, health_label
 from src.segmentation import segment_customers
 from src.database import save_to_db, run_query
 from src.chatbot import answer_question
+from src.recommender import build_summary, get_recommendations
 
 st.set_page_config(page_title="AI Business Doctor", page_icon="🧠", layout="wide")
 st.title("🧠 AI-Powered Business Doctor")
@@ -50,7 +50,7 @@ if "Date" not in mapping or "Sales" not in mapping:
 
 df = clean_data(raw, mapping)
 
-# KPI cards
+# ---------------- KPI cards ----------------
 k = compute_kpis(df)
 cols = st.columns(len(k))
 for col, (name, val) in zip(cols, k.items()):
@@ -60,7 +60,8 @@ for col, (name, val) in zip(cols, k.items()):
         col.metric(name, f"{val:,}")
     else:
         col.metric(name, f"${val:,.0f}")
-# Business diagnosis
+
+# ---------------- Business health check ----------------
 score, issues = diagnose(df)
 
 st.subheader("🩺 Business Health Check")
@@ -80,14 +81,15 @@ with right:
     if not issues:
         st.success("No major problems detected.")
     for i in issues:
-        message = f"**{i['title']}**: {i['detail']}"
+        message = f"**{i['title']}**: {i['detail']}".replace("$", "\\$")
         if i["severity"] == "critical":
             st.error(message)
         else:
             st.warning(message)
+
+# ---------------- Charts ----------------
 y_cols = [c for c in ["Sales", "Profit"] if c in df.columns]
 
-# Charts
 st.plotly_chart(
     px.line(monthly_trend(df), x="Month", y=y_cols, title="Monthly Trend"),
     width="stretch",
@@ -105,7 +107,30 @@ if "Category" in df.columns:
         width="stretch",
     )
 
-# Sales forecast
+# ---------------- Customer segmentation ----------------
+st.subheader("👥 Customer Segments (RFM + KMeans)")
+seg_result = segment_customers(df)
+
+if seg_result is None:
+    st.info("Customer segmentation needs Customer and Order columns.")
+else:
+    rfm_df, seg = seg_result
+    s1, s2 = st.columns(2)
+    with s1:
+        st.plotly_chart(
+            px.pie(seg.reset_index(), names="Segment", values="Customers",
+                   title="Customers per segment"),
+            width="stretch",
+        )
+    with s2:
+        st.plotly_chart(
+            px.bar(seg.reset_index(), x="Segment", y="TotalRevenue",
+                   title="Revenue per segment"),
+            width="stretch",
+        )
+    st.dataframe(seg, width="stretch")
+
+# ---------------- Sales forecast ----------------
 st.subheader("📈 Sales Forecast (next 6 months)")
 result = forecast_sales(df)
 
@@ -125,10 +150,41 @@ else:
     r, b = result["rf_scores"], result["baseline_scores"]
     c1.metric("Random Forest MAPE", f"{r['MAPE']:.1f}%")
     c2.metric("Baseline MAPE", f"{b['MAPE']:.1f}%")
-# Database
-# AI chatbot
+
+# ---------------- AI recommendations ----------------
+st.subheader("💊 AI Recommendations")
+if st.button("Generate recommendations"):
+    seg_table = seg_result[1] if seg_result else None
+    summary = build_summary(k, score, issues, result, seg_table)
+    with st.spinner("Writing recommendations..."):
+        try:
+            st.markdown(get_recommendations(summary).replace("$", "\\$"))
+        except Exception as e:
+            st.error(f"AI service problem: {e}")
+
+# ---------------- Database ----------------
+st.subheader("🗄️ Database")
+if st.button("Save cleaned data to database"):
+    n = save_to_db(df)
+    st.success(f"Saved {n:,} rows to table 'sales'.")
+
+with st.expander("Run a SQL query"):
+    sql_text = st.text_area(
+        "SELECT query",
+        "SELECT Category, ROUND(SUM(Sales),0) AS total_sales FROM sales GROUP BY Category",
+    )
+    if st.button("Run query"):
+        try:
+            st.dataframe(run_query(sql_text))
+        except Exception as e:
+            st.error(f"Query failed: {e}")
+
+with st.expander("View cleaned data"):
+    st.dataframe(df.head(100))
+
+# ---------------- AI chatbot ----------------
 st.subheader("💬 Ask your Business Doctor")
-st.caption("Tip: click 'Save cleaned data to database' below first.")
+st.caption("Tip: click 'Save cleaned data to database' above first.")
 
 if "chat" not in st.session_state:
     st.session_state.chat = []
@@ -145,26 +201,8 @@ if question:
     st.session_state.chat.append({"role": "user", "text": question})
     with st.spinner("Thinking..."):
         try:
-            answer, sql, result_df = answer_question(question)
+            answer, used_sql, _ = answer_question(question)
         except Exception as e:
-            answer, sql = f"Sorry, the AI service had a problem: {e}", None
-    st.session_state.chat.append({"role": "assistant", "text": answer, "sql": sql})
+            answer, used_sql = f"Sorry, the AI service had a problem: {e}", None
+    st.session_state.chat.append({"role": "assistant", "text": answer, "sql": used_sql})
     st.rerun()
-st.subheader("🗄️ Database")
-if st.button("Save cleaned data to database"):
-    n = save_to_db(df)
-    st.success(f"Saved {n:,} rows to table 'sales'.")
-
-with st.expander("Run a SQL query"):
-    sql = st.text_area(
-        "SELECT query",
-        "SELECT Category, ROUND(SUM(Sales),0) AS total_sales FROM sales GROUP BY Category",
-    )
-    if st.button("Run query"):
-        try:
-            st.dataframe(run_query(sql))
-        except Exception as e:
-            st.error(f"Query failed: {e}")
-
-with st.expander("View cleaned data"):
-    st.dataframe(df.head(100))
