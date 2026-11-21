@@ -23,3 +23,8 @@ def run_query(sql):
         raise ValueError("Only SELECT queries are allowed.")
     with engine.connect() as conn:
         return pd.read_sql(text(cleaned), conn)
+
+def get_schema(table="sales"):
+    from sqlalchemy import inspect
+    cols = [c["name"] for c in inspect(engine).get_columns(table)]
+    return f"Table: {table} (SQLite)\nColumns: " + ", ".join(cols)

@@ -26,7 +26,12 @@ if uploaded is None:
     st.info("Upload a business dataset (CSV / Excel) from the sidebar to begin.")
     st.stop()
 
-raw = load_file(uploaded)
+try:
+    raw = load_file(uploaded)
+except Exception as e:
+    st.error(f"Could not read the file: {e}")
+    st.stop()
+
 st.sidebar.success(f"Loaded: {raw.shape[0]:,} rows, {raw.shape[1]} columns")
 
 # Auto-detect columns, and let the user override them
@@ -46,10 +51,14 @@ for role in CANDIDATES:
         mapping[role] = choice
 
 if "Date" not in mapping or "Sales" not in mapping:
-    st.error("Please select at least the Date and Sales columns.")
+    st.error("Could not detect Date and Sales columns automatically. Please pick them in the sidebar Column Mapping.")
     st.stop()
 
-df = clean_data(raw, mapping)
+try:
+    df = clean_data(raw, mapping)
+except Exception as e:
+    st.error(f"Could not process this file: {e}")
+    st.stop()
 
 # ---------------- KPI cards ----------------
 k = compute_kpis(df)
@@ -110,7 +119,11 @@ if "Category" in df.columns:
 
 # ---------------- Customer segmentation ----------------
 st.subheader("👥 Customer Segments (RFM + KMeans)")
-seg_result = segment_customers(df)
+try:
+    seg_result = segment_customers(df)
+except Exception as e:
+    seg_result = None
+    st.warning(f"Customer segmentation could not run on this dataset: {e}")
 
 if seg_result is None:
     st.info("Customer segmentation needs Customer and Order columns.")
@@ -133,7 +146,11 @@ else:
 
 # ---------------- Sales forecast ----------------
 st.subheader("📈 Sales Forecast (next 6 months)")
-result = forecast_sales(df)
+try:
+    result = forecast_sales(df)
+except Exception as e:
+    result = None
+    st.warning(f"Forecast could not run on this dataset: {e}")
 
 if result is None:
     st.info("Not enough monthly data to build a forecast (need about 2.5 years).")
@@ -159,20 +176,30 @@ if st.button("Generate recommendations"):
     summary = build_summary(k, score, issues, result, seg_table)
     with st.spinner("Writing recommendations..."):
         try:
-            st.markdown(get_recommendations(summary).replace("$", "\\$"))
+            st.session_state.recs = get_recommendations(summary)
         except Exception as e:
             st.error(f"AI service problem: {e}")
 
-# ---------------- Database ----------------
+if st.session_state.get("recs"):
+    st.markdown(st.session_state.recs.replace("$", "\\$"))
+
 # ---------------- PDF report ----------------
 st.subheader("📄 Download Report")
-pdf_bytes = build_pdf(
-    k, score, health_label(score), issues,
-    seg_result[1] if seg_result else None,
-    st.session_state.get("recs"),
-)
-st.download_button("Download PDF report", pdf_bytes, file_name="business_report.pdf", mime="application/pdf")
-st.caption("Tip: click 'Generate recommendations' first to include them in the report.")
+try:
+    pdf_bytes = build_pdf(
+        k, score, health_label(score), issues,
+        seg_result[1] if seg_result else None,
+        st.session_state.get("recs"),
+    )
+    st.download_button(
+        "Download PDF report", pdf_bytes,
+        file_name="business_report.pdf", mime="application/pdf",
+    )
+    st.caption("Tip: click 'Generate recommendations' first to include them in the report.")
+except Exception as e:
+    st.warning(f"PDF report could not be created: {e}")
+
+# ---------------- Database ----------------
 st.subheader("🗄️ Database")
 if st.button("Save cleaned data to database"):
     n = save_to_db(df)
@@ -181,7 +208,7 @@ if st.button("Save cleaned data to database"):
 with st.expander("Run a SQL query"):
     sql_text = st.text_area(
         "SELECT query",
-        "SELECT Category, ROUND(SUM(Sales),0) AS total_sales FROM sales GROUP BY Category",
+        "SELECT * FROM sales LIMIT 10",
     )
     if st.button("Run query"):
         try:
@@ -206,7 +233,7 @@ for msg in st.session_state.chat:
             with st.expander("SQL used"):
                 st.code(msg["sql"], language="sql")
 
-question = st.chat_input("e.g. Which category has the lowest profit?")
+question = st.chat_input("Ask anything about your data, e.g. Which category has the lowest profit?")
 if question:
     st.session_state.chat.append({"role": "user", "text": question})
     with st.spinner("Thinking..."):
