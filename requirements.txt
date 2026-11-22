@@ -8,3 +8,7 @@ sqlalchemy
 python-dotenv
 google-genai
 reportlab
+fastapi
+uvicorn
+python-multipart
+requests
