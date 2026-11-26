@@ -1,5 +1,6 @@
 import io
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -42,6 +43,24 @@ def _need_data():
     if "df" not in STATE:
         raise HTTPException(status_code=400, detail="No dataset uploaded yet. Call POST /upload first.")
     return STATE["df"]
+
+
+# ---------- SECURITY: allow only read-only SELECT queries ----------
+_BANNED_SQL = re.compile(
+    r"\b(insert|update|delete|drop|alter|create|attach|detach|pragma|replace|truncate|vacuum|reindex)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_safe_select(sql: str) -> bool:
+    s = re.sub(r"/\*.*?\*/", " ", sql, flags=re.S)   # remove /* comments */
+    s = re.sub(r"--[^\n]*", " ", s)                  # remove -- comments
+    s = s.strip().rstrip(";").strip()
+    if not s or ";" in s:                            # empty or multiple statements
+        return False
+    if not re.match(r"(?is)^(select|with)\b", s):    # must start with SELECT / WITH
+        return False
+    return not _BANNED_SQL.search(s)
 
 
 @app.get("/health")
@@ -161,6 +180,9 @@ def report():
 @app.post("/query")
 def query(req: SQLRequest):
     _need_data()
+    # SECURITY FIX: block anything except a single read-only SELECT
+    if not _is_safe_select(req.sql):
+        raise HTTPException(status_code=400, detail="Only a single read-only SELECT query is allowed.")
     try:
         return {"rows": _records(run_query(req.sql))}
     except Exception as e:
