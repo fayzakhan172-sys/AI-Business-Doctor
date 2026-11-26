@@ -7,6 +7,8 @@ import api_client as api
 
 st.set_page_config(page_title="AI Business Doctor", page_icon="🧠", layout="wide")
 
+# FIX 1: CSS was malformed (two rules were glued together), so card styling and
+# font size were not applied properly. Also stop the "..." truncation on metric values.
 st.markdown(
     """
     <style>
@@ -16,6 +18,8 @@ st.markdown(
     .hero h1 {margin: 0; font-size: 2rem; color: white;}
     .hero p {margin: 0.3rem 0 0 0; opacity: 0.9;}
     [data-testid="stMetric"] {background: #F3F4F8; border-radius: 12px; padding: 0.8rem 1rem;}
+    [data-testid="stMetricValue"] {font-size: 1.5rem;}
+    [data-testid="stMetricValue"] > div {overflow: visible; text-overflow: clip; white-space: nowrap;}
     button[data-baseweb="tab"] {font-size: 1rem; font-weight: 600;}
     </style>
     <div class="hero">
@@ -28,7 +32,21 @@ st.markdown(
 
 
 def money(text):
-    return str(text).replace("$", "\\$")
+    """FIX 2: escape '$' exactly once.
+    The backend text may already contain '\\$', so remove old escapes first,
+    then escape again. This avoids the double-escape that triggered LaTeX."""
+    return str(text).replace("\\$", "$").replace("$", "\\$")
+
+
+def short_money(v):
+    """FIX 3: compact numbers for KPI cards so they don't get cut off ($2.26M)."""
+    sign = "-" if v < 0 else ""
+    v = abs(v)
+    if v >= 1e6:
+        return f"{sign}${v / 1e6:.2f}M"
+    if v >= 1e3:
+        return f"{sign}${v / 1e3:.1f}K"
+    return f"{sign}${v:,.0f}"
 
 
 def safe_get(path):
@@ -93,11 +111,11 @@ with tab_over:
     metric_cols = st.columns(len(kpis))
     for col, (name, val) in zip(metric_cols, kpis.items()):
         if "%" in name:
-            col.metric(name, f"{val:.2f}%")
+            col.metric(name, f"{val:.1f}%")
         elif name in ("Rows", "Orders", "Customers"):
             col.metric(name, f"{int(val):,}")
         else:
-            col.metric(name, f"${val:,.0f}")
+            col.metric(name, short_money(val))
 
     st.subheader("🩺 Business Health Check")
     if diag_err:
@@ -109,9 +127,18 @@ with tab_over:
             color = "#16A34A" if score >= 80 else "#F59E0B" if score >= 60 else "#DC2626"
             gauge = go.Figure(go.Indicator(
                 mode="gauge+number", value=score, title={"text": diag["label"]},
-                gauge={"axis": {"range": [0, 100]}, "bar": {"color": color}},
+                gauge={
+                    "axis": {"range": [0, 100]},
+                    "bar": {"color": color},
+                    "steps": [
+                        {"range": [0, 40], "color": "#FEE2E2"},
+                        {"range": [40, 70], "color": "#FEF3C7"},
+                        {"range": [70, 100], "color": "#DCFCE7"},
+                    ],
+                },
             ))
-            gauge.update_layout(height=260, margin=dict(t=60, b=0, l=20, r=20))
+            # FIX 4: wider side margins so the axis end label "100" is not cut off
+            gauge.update_layout(height=280, margin=dict(t=60, b=10, l=45, r=45))
             st.plotly_chart(gauge, width="stretch")
         with right:
             if not diag["issues"]:
@@ -164,7 +191,7 @@ with tab_fc:
         m1.metric("Random Forest MAPE", f"{fc['random_forest_scores']['MAPE']:.1f}%")
         m2.metric("Baseline MAPE", f"{fc['baseline_scores']['MAPE']:.1f}%")
         avg = sum(fc["future"]["values"]) / len(fc["future"]["values"])
-        m3.metric("Avg forecast / month", f"${avg:,.0f}")
+        m3.metric("Avg forecast / month", short_money(avg))
         st.caption("MAPE = average percentage error on the last 6 months. Lower is better.")
 
 # ===== AI Assistant =====
